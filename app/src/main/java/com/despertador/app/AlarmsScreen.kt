@@ -57,6 +57,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -83,7 +86,7 @@ fun repeatText(days: Set<Int>, prefix: String = ""): String = when {
 // ------------------------------------------------------------------
 
 @Composable
-fun AlarmsScreen(refreshTick: Int) {
+fun AlarmsScreen(refreshTick: Int, active: Boolean = true) {
     val ctx = LocalContext.current
     var alarms by remember { mutableStateOf(AlarmRepo.load(ctx)) }
     var dismissedUntil by remember { mutableLongStateOf(AlarmRepo.dismissedUntil(ctx)) }
@@ -132,7 +135,7 @@ fun AlarmsScreen(refreshTick: Int) {
             now = System.currentTimeMillis()
         }
     }
-    BackHandler(enabled = selecting) { selected = emptySet() }
+    BackHandler(enabled = selecting && active) { selected = emptySet() }
 
     val allEnabled = alarms.filter { it.id in selected }.all { it.enabled }
     val allSelected = alarms.isNotEmpty() && alarms.all { it.id in selected }
@@ -197,6 +200,7 @@ fun AlarmsScreen(refreshTick: Int) {
                     },
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceVariant,
+                    shadowElevation = 4.dp,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
                 ) {
                     AnimatedContent(
@@ -221,8 +225,8 @@ fun AlarmsScreen(refreshTick: Int) {
 
             LazyColumn(
                 Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 110.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 110.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(alarms, key = { it.id }) { a ->
                     val skipped = a.enabled && a.days.isNotEmpty() && a.skipUntil > now
@@ -260,7 +264,8 @@ fun AlarmsScreen(refreshTick: Int) {
                 modifier = Modifier.padding(24.dp),
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shape = RoundedCornerShape(24.dp)
+                shape = RoundedCornerShape(24.dp),
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp, pressedElevation = 3.dp)
             ) { Icon(Icons.Filled.Add, "Novo alarme") }
         }
     }
@@ -439,9 +444,22 @@ private fun AlarmCard(
                 scaleX = scale
                 scaleY = scale
             }
+            .shadow(
+                elevation = 5.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.25f),
+                spotColor = Color.Black.copy(alpha = 0.35f)
+            )
             .clip(shape)
             // cor lida só na fase de desenho: a animação não recompõe o cartão a cada quadro
-            .drawBehind { drawRect(container) }
+            .drawBehind {
+                drawRect(Brush.verticalGradient(listOf(lerp(container, Color.White, 0.06f), container)))
+            }
+            .border(
+                1.dp,
+                if (selected) cs.primary else cs.outlineVariant.copy(alpha = 0.4f),
+                shape
+            )
             .combinedClickable(
                 interactionSource = interaction,
                 indication = LocalIndication.current,

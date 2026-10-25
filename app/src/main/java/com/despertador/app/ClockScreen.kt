@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
@@ -45,11 +46,12 @@ private fun relText(tzId: String, now: Long): String {
 }
 
 @Composable
-fun ClockScreen() {
+fun ClockScreen(active: Boolean = true) {
     val ctx = LocalContext.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
+    // Aba escondida não atualiza o relógio (economiza processamento); ao voltar, atualiza na hora.
+    LaunchedEffect(active) {
+        while (active) {
             now = System.currentTimeMillis()
             delay(1000 - now % 1000)
         }
@@ -89,7 +91,13 @@ fun ClockScreen() {
                     SimpleDateFormat("HH:mm", Locale.getDefault()).apply { timeZone = TimeZone.getTimeZone(id) }
                 }
                 val rel = remember(id, now / 60_000L) { relText(id, now) }
-                Row(Modifier.animateItem().fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.animateItem().fillMaxWidth().padding(vertical = 6.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shadowElevation = 3.dp
+                ) {
+                Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(WorldClocks.name(id), style = MaterialTheme.typography.titleMedium)
                         Text(
@@ -104,6 +112,7 @@ fun ClockScreen() {
                         WorldClocks.save(ctx, zones)
                     }) { Icon(Icons.Filled.Close, "Remover") }
                 }
+                }
             }
         }
 
@@ -111,6 +120,7 @@ fun ClockScreen() {
             onClick = { adding = true },
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceVariant,
+            shadowElevation = 4.dp,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 16.dp)
         ) {
             Text(

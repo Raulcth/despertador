@@ -12,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -99,7 +103,10 @@ fun AppRoot(refreshTick: Int) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.shadow(10.dp)
+            ) {
                 tabs.forEachIndexed { i, (label, icon) ->
                     NavigationBarItem(
                         selected = tab == i,
@@ -112,12 +119,47 @@ fun AppRoot(refreshTick: Int) {
         }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
-            Crossfade(targetState = tab, animationSpec = tween(220), label = "tabs") { t ->
-                when (t) {
-                    0 -> AlarmsScreen(refreshTick)
-                    1 -> ClockScreen()
-                    2 -> TimerScreen()
-                    else -> StopwatchScreen(stopwatch)
+            // As abas já visitadas ficam montadas: trocar de aba vira só um fade suave,
+            // sem montar a tela do zero (era isso que causava a travadinha).
+            val visited = remember { mutableStateListOf(0) }
+            LaunchedEffect(tab) { if (tab !in visited) visited.add(tab) }
+            for (i in 0 until 4) {
+                if (i == tab || i in visited) {
+                    key(i) {
+                        val shown = i == tab
+                        var appeared by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) { appeared = true }
+                        val alpha by animateFloatAsState(
+                            if (shown && appeared) 1f else 0f,
+                            tween(200),
+                            label = "tabAlpha"
+                        )
+                        val hidden = !shown && alpha < 0.001f
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    this.alpha = alpha
+                                    val s = 0.98f + 0.02f * alpha
+                                    scaleX = s
+                                    scaleY = s
+                                }
+                                // aba escondida não é posicionada: não desenha e não recebe toques
+                                .then(
+                                    if (hidden) Modifier.layout { m, c ->
+                                        val p = m.measure(c)
+                                        layout(p.width, p.height) { }
+                                    } else Modifier
+                                )
+                        ) {
+                            when (i) {
+                                0 -> AlarmsScreen(refreshTick, active = shown)
+                                1 -> ClockScreen(active = shown)
+                                2 -> TimerScreen(active = shown)
+                                else -> StopwatchScreen(stopwatch)
+                            }
+                        }
+                    }
                 }
             }
         }

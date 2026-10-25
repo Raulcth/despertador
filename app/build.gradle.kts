@@ -15,8 +15,18 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    // Assinatura fixa do release: o APK novo atualiza o antigo sem precisar desinstalar.
+    signingConfigs {
+        create("release") {
+            storeFile = file("despertador-release.jks")
+            storePassword = "despertador"
+            keyAlias = "despertador"
+            keyPassword = "despertador"
+        }
+    }
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             // R8 + recursos enxutos: o app release fica bem mais rápido que o de depuração
             isMinifyEnabled = true
             isShrinkResources = true

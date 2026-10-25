@@ -19,9 +19,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -85,7 +89,20 @@ fun Wheel(count: Int, initial: Int, onChange: (Int) -> Unit) {
     }
 
     val on = MaterialTheme.colorScheme.onSurface
-    Box(Modifier.height(itemHeight * 3).width(84.dp)) {
+    Box(
+        Modifier
+            .height(itemHeight * 3)
+            .width(84.dp)
+            // faixa suave atrás do número selecionado
+            .drawBehind {
+                drawRoundRect(
+                    color = on.copy(alpha = 0.08f),
+                    topLeft = Offset(0f, itemPx),
+                    size = Size(size.width, itemPx),
+                    cornerRadius = CornerRadius(18.dp.toPx())
+                )
+            }
+    ) {
         LazyColumn(state = state, flingBehavior = fling, modifier = Modifier.fillMaxSize()) {
             items(total) { i ->
                 val isCenter = i == center

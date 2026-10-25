@@ -22,7 +22,7 @@ private fun fmtTimer(ms: Long): String {
 }
 
 @Composable
-fun TimerScreen() {
+fun TimerScreen(active: Boolean = true) {
     val ctx = LocalContext.current
     var st by remember { mutableStateOf(TimerStore.read(ctx)) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -31,10 +31,10 @@ fun TimerScreen() {
     var s by remember { mutableIntStateOf(0) }
 
     // Rodando: acompanha cada quadro da tela (anel suave). Parado: quase não gasta nada.
-    LaunchedEffect(Unit) {
+    LaunchedEffect(active) {
         var lastPoll = 0L
         while (true) {
-            if (st.mode == 1) withFrameNanos { } else delay(250)
+            if (!active) delay(500) else if (st.mode == 1) withFrameNanos { } else delay(250)
             val t = System.currentTimeMillis()
             now = t
             if (t - lastPoll >= 250L) {
@@ -82,6 +82,7 @@ fun TimerScreen() {
                             }
                         },
                         enabled = canStart,
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp, pressedElevation = 2.dp),
                         modifier = Modifier.height(56.dp).widthIn(min = 180.dp)
                     ) { Text("Iniciar", fontSize = 18.sp) }
                 }
@@ -110,6 +111,7 @@ fun TimerScreen() {
                                 if (st.mode == 1) TimerStore.pause(ctx) else TimerStore.resume(ctx)
                                 st = TimerStore.read(ctx)
                             },
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp, pressedElevation = 2.dp),
                             modifier = Modifier.height(56.dp)
                         ) { Text(if (st.mode == 1) "Pausar" else "Continuar") }
                     }
