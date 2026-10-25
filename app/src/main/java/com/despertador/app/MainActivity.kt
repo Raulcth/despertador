@@ -1,6 +1,9 @@
 package com.despertador.app
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -10,20 +13,29 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
@@ -55,7 +67,9 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppRoot(refreshTick: Int) {
+    val ctx = LocalContext.current
     var tab by remember { mutableIntStateOf(0) }
+    var crash by remember { mutableStateOf(CrashLog.read(ctx)) }
     val stopwatch = remember { StopwatchState() }
     val tabs = listOf(
         "Alarmes" to Icons.Outlined.Alarm,
@@ -86,5 +100,29 @@ fun AppRoot(refreshTick: Int) {
                 else -> StopwatchScreen(stopwatch)
             }
         }
+    }
+
+    crash?.let { text ->
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("O app fechou por um erro") },
+            text = {
+                Box(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                    Text(text, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("erro", text))
+                }) { Text("Copiar") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    CrashLog.clear(ctx)
+                    crash = null
+                }) { Text("Fechar") }
+            }
+        )
     }
 }
