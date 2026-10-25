@@ -46,6 +46,25 @@ object AlarmRepo {
         load(c).firstOrNull { it.id == id }?.let { save(c, it.copy(enabled = on)) }
     }
 
+    /** Cria vários alarmes em sequência: base, base+intervalo, base+2*intervalo... */
+    fun createSeries(c: Context, base: Alarm, intervalMin: Int, count: Int): List<Alarm> {
+        val out = mutableListOf<Alarm>()
+        for (i in 0 until count.coerceAtLeast(1)) {
+            val total = (base.hour * 60 + base.minute + i * intervalMin) % 1440
+            val a = base.copy(id = nextId(c), hour = total / 60, minute = total % 60)
+            save(c, a)
+            out.add(a)
+        }
+        return out
+    }
+
+    /** "Dispensar" do aviso: pula só esta ocorrência (alarme de uma vez só é desligado). */
+    fun skipOccurrence(c: Context, id: Int, alarmTime: Long) {
+        val a = load(c).firstOrNull { it.id == id } ?: return
+        if (a.days.isEmpty()) save(c, a.copy(enabled = false))
+        else save(c, a.copy(skipUntil = alarmTime))
+    }
+
     fun rescheduleAll(c: Context) {
         load(c).forEach { AlarmScheduler.schedule(c, it) }
     }

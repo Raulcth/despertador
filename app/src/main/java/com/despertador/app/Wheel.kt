@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.sp
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Wheel(count: Int, initial: Int, onChange: (Int) -> Unit) {
+    val ctx = LocalContext.current
     val itemHeight = 60.dp
     val itemPx = with(LocalDensity.current) { itemHeight.toPx() }
     val total = count * 1000
@@ -35,7 +37,13 @@ fun Wheel(count: Int, initial: Int, onChange: (Int) -> Unit) {
         }
     }
     LaunchedEffect(state) {
-        snapshotFlow { center }.collect { onChange(it % count) }
+        var last = -1
+        snapshotFlow { center }.collect {
+            val v = it % count
+            if (last != -1 && v != last) Haptics.tick(ctx)
+            last = v
+            onChange(v)
+        }
     }
     val on = MaterialTheme.colorScheme.onSurface
     Box(Modifier.height(itemHeight * 3).width(84.dp)) {

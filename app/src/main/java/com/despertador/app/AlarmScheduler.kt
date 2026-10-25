@@ -8,6 +8,7 @@ import android.content.Intent
 object AlarmScheduler {
     private const val SNOOZE_OFFSET = 1_000_000
     private const val TIMER_CODE = 2_000_000
+    private const val PRE_CODE = 3_000_000
 
     private fun am(c: Context) = c.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
@@ -23,6 +24,17 @@ object AlarmScheduler {
         )
     }
 
+    private fun prePi(c: Context, id: Int, alarmTime: Long): PendingIntent {
+        val i = Intent(c, PreAlertReceiver::class.java).apply {
+            action = PreAlertReceiver.ACTION_SHOW
+            putExtra(EXTRA_ID, id)
+            putExtra(EXTRA_ALARM_TIME, alarmTime)
+        }
+        return PendingIntent.getBroadcast(
+            c, PRE_CODE + id, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     private fun showPi(c: Context): PendingIntent =
         PendingIntent.getActivity(c, 0, Intent(c, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
 
@@ -31,13 +43,25 @@ object AlarmScheduler {
             cancel(c, a.id)
             return
         }
-        val t = nextTrigger(a, System.currentTimeMillis(), AlarmRepo.dismissedUntil(c))
+        val now = System.currentTimeMillis()
+        val t = nextTrigger(a, now, AlarmRepo.dismissedUntil(c))
         am(c).setAlarmClock(AlarmManager.AlarmClockInfo(t, showPi(c)), firePi(c, a.id, a.id, false, 0))
+
+        // aviso silencioso antes do alarme (só se ainda der tempo)
+        val pre = t - PRE_ALERT_MIN * 60_000L
+        if (pre > now) {
+            am(c).setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, pre, prePi(c, a.id, t))
+        } else {
+            am(c).cancel(prePi(c, a.id, t))
+        }
+        PreAlert.cancel(c, a.id)
     }
 
     fun cancel(c: Context, id: Int) {
         am(c).cancel(firePi(c, id, id, false, 0))
         am(c).cancel(firePi(c, id + SNOOZE_OFFSET, id, true, 0))
+        am(c).cancel(prePi(c, id, 0L))
+        PreAlert.cancel(c, id)
     }
 
     fun scheduleSnooze(c: Context, id: Int, minutes: Int, count: Int) {

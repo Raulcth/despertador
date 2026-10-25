@@ -86,7 +86,7 @@ fun ClockScreen() {
             items(zones, key = { it }) { id ->
                 val tz = TimeZone.getTimeZone(id)
                 val f = SimpleDateFormat("HH:mm", Locale.getDefault()).apply { timeZone = tz }
-                Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.animateItem().fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(WorldClocks.name(id), style = MaterialTheme.typography.titleMedium)
                         Text(

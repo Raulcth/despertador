@@ -11,6 +11,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
@@ -93,11 +95,13 @@ fun AppRoot(refreshTick: Int) {
         }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
-            when (tab) {
-                0 -> AlarmsScreen(refreshTick)
-                1 -> ClockScreen()
-                2 -> TimerScreen()
-                else -> StopwatchScreen(stopwatch)
+            Crossfade(targetState = tab, animationSpec = tween(220), label = "tabs") { t ->
+                when (t) {
+                    0 -> AlarmsScreen(refreshTick)
+                    1 -> ClockScreen()
+                    2 -> TimerScreen()
+                    else -> StopwatchScreen(stopwatch)
+                }
             }
         }
     }

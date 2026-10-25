@@ -1,5 +1,7 @@
 package com.despertador.app
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,54 +47,61 @@ fun TimerScreen() {
         Text("Timers", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.weight(1f))
 
-        if (st.mode == 0) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Wheel(24, h) { h = it }
-                Text("h", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Wheel(60, m) { m = it }
-                Text("min", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Wheel(60, s) { s = it }
-                Text("s", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Spacer(Modifier.height(32.dp))
-            Button(
-                onClick = {
-                    val total = ((h * 60L + m) * 60L + s) * 1000L
-                    if (total > 0) {
-                        TimerStore.start(ctx, total)
-                        st = TimerStore.read(ctx)
+        Crossfade(targetState = st.mode == 0, animationSpec = tween(260), label = "timer") { idle ->
+            if (idle) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Wheel(24, h) { h = it }
+                        Text("h", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Wheel(60, m) { m = it }
+                        Text("min", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Wheel(60, s) { s = it }
+                        Text("s", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                },
-                enabled = h + m + s > 0,
-                modifier = Modifier.height(56.dp).widthIn(min = 180.dp)
-            ) { Text("Iniciar", fontSize = 18.sp) }
-        } else {
-            val remaining = if (st.mode == 1) (st.endAt - now).coerceAtLeast(0L) else st.remaining
-            Box(contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(
-                    progress = { if (st.total > 0) remaining.toFloat() / st.total.toFloat() else 0f },
-                    modifier = Modifier.size(260.dp),
-                    strokeWidth = 6.dp,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-                Text(fmtTimer(remaining), fontSize = 52.sp, fontWeight = FontWeight.Light)
-            }
-            Spacer(Modifier.height(32.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        TimerStore.clear(ctx)
-                        st = TimerStore.read(ctx)
-                    },
-                    modifier = Modifier.height(56.dp)
-                ) { Text("Cancelar") }
-                Button(
-                    onClick = {
-                        if (st.mode == 1) TimerStore.pause(ctx) else TimerStore.resume(ctx)
-                        st = TimerStore.read(ctx)
-                    },
-                    modifier = Modifier.height(56.dp)
-                ) { Text(if (st.mode == 1) "Pausar" else "Continuar") }
+                    Spacer(Modifier.height(32.dp))
+                    Button(
+                        onClick = {
+                            val total = ((h * 60L + m) * 60L + s) * 1000L
+                            if (total > 0) {
+                                Haptics.click(ctx)
+                                TimerStore.start(ctx, total)
+                                st = TimerStore.read(ctx)
+                            }
+                        },
+                        enabled = h + m + s > 0,
+                        modifier = Modifier.height(56.dp).widthIn(min = 180.dp)
+                    ) { Text("Iniciar", fontSize = 18.sp) }
+                }
+            } else {
+                val remaining = if (st.mode == 1) (st.endAt - now).coerceAtLeast(0L) else st.remaining
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(
+                            progress = { if (st.total > 0) remaining.toFloat() / st.total.toFloat() else 0f },
+                            modifier = Modifier.size(260.dp),
+                            strokeWidth = 6.dp,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        Text(fmtTimer(remaining), fontSize = 52.sp, fontWeight = FontWeight.Light)
+                    }
+                    Spacer(Modifier.height(32.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                TimerStore.clear(ctx)
+                                st = TimerStore.read(ctx)
+                            },
+                            modifier = Modifier.height(56.dp)
+                        ) { Text("Cancelar") }
+                        Button(
+                            onClick = {
+                                if (st.mode == 1) TimerStore.pause(ctx) else TimerStore.resume(ctx)
+                                st = TimerStore.read(ctx)
+                            },
+                            modifier = Modifier.height(56.dp)
+                        ) { Text(if (st.mode == 1) "Pausar" else "Continuar") }
+                    }
+                }
             }
         }
         Spacer(Modifier.weight(1f))

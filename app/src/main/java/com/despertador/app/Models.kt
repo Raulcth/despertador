@@ -8,6 +8,10 @@ const val EXTRA_ID = "alarm_id"
 const val EXTRA_IS_SNOOZE = "is_snooze"
 const val EXTRA_SNOOZE_COUNT = "snooze_count"
 const val TIMER_ID = -1
+const val EXTRA_ALARM_TIME = "alarm_time"
+
+/** Minutos de antecedência do aviso silencioso. */
+const val PRE_ALERT_MIN = 30
 
 fun two(n: Int): String = n.toString().padStart(2, '0')
 
@@ -25,6 +29,7 @@ data class Alarm(
     val snoozeOn: Boolean = true,
     val snoozeMinutes: Int = 5,
     val snoozeTimes: Int = 3,
+    val skipUntil: Long = 0L,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -39,6 +44,7 @@ data class Alarm(
         put("snoozeOn", snoozeOn)
         put("snoozeMinutes", snoozeMinutes)
         put("snoozeTimes", snoozeTimes)
+        put("skipUntil", skipUntil)
     }
 
     companion object {
@@ -58,6 +64,7 @@ data class Alarm(
                 snoozeOn = o.optBoolean("snoozeOn", true),
                 snoozeMinutes = o.optInt("snoozeMinutes", 5),
                 snoozeTimes = o.optInt("snoozeTimes", 3),
+                skipUntil = o.optLong("skipUntil", 0L),
             )
         }
     }
@@ -75,7 +82,7 @@ fun nextTrigger(a: Alarm, now: Long, notBefore: Long = 0L): Long {
             set(Calendar.MILLISECOND, 0)
         }
         val t = c.timeInMillis
-        if (t <= now || t < notBefore) continue
+        if (t <= now || t < notBefore || t <= a.skipUntil) continue
         if (a.days.isEmpty() || c.get(Calendar.DAY_OF_WEEK) in a.days) return t
     }
     return now + 24L * 3600L * 1000L
