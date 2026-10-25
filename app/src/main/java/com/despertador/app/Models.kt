@@ -1,5 +1,6 @@
 package com.despertador.app
 
+import androidx.compose.runtime.Immutable
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -16,6 +17,7 @@ const val PRE_ALERT_MIN = 30
 fun two(n: Int): String = n.toString().padStart(2, '0')
 
 /** days usa Calendar.SUNDAY(1)..SATURDAY(7). Vazio = toca uma vez. */
+@Immutable
 data class Alarm(
     val id: Int,
     val hour: Int,
@@ -87,6 +89,16 @@ fun nextTrigger(a: Alarm, now: Long, notBefore: Long = 0L): Long {
     }
     return now + 24L * 3600L * 1000L
 }
+
+/** Meia-noite (início) do dia seguinte àquele de [ms]. */
+fun startOfNextDay(ms: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = ms
+    add(Calendar.DAY_OF_YEAR, 1)
+    set(Calendar.HOUR_OF_DAY, 0)
+    set(Calendar.MINUTE, 0)
+    set(Calendar.SECOND, 0)
+    set(Calendar.MILLISECOND, 0)
+}.timeInMillis
 
 fun untilText(ms: Long): String {
     val total = ((ms + 59_999L) / 60_000L).toInt()

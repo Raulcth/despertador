@@ -44,7 +44,7 @@ object AlarmScheduler {
             return
         }
         val now = System.currentTimeMillis()
-        val t = nextTrigger(a, now, AlarmRepo.dismissedUntil(c))
+        val t = nextTrigger(a, now)
         am(c).setAlarmClock(AlarmManager.AlarmClockInfo(t, showPi(c)), firePi(c, a.id, a.id, false, 0))
 
         // aviso silencioso antes do alarme (só se ainda der tempo)

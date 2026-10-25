@@ -16,7 +16,12 @@ android {
         versionName = "1.0"
     }
     buildTypes {
-        release { isMinifyEnabled = false }
+        release {
+            // R8 + recursos enxutos: o app release fica bem mais rápido que o de depuração
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -35,4 +40,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.core:core-ktx:1.15.0")
+    // instala os perfis de otimização (baseline profiles) do Compose no aparelho
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 }

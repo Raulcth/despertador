@@ -57,9 +57,10 @@ fun ClockScreen() {
     var zones by remember { mutableStateOf(WorldClocks.load(ctx)) }
     var adding by remember { mutableStateOf(false) }
 
-    val hm = SimpleDateFormat("HH:mm", Locale.getDefault())
-    val sec = SimpleDateFormat("ss", Locale.getDefault())
-    val date = SimpleDateFormat("EEEE, d 'de' MMMM", Locale.getDefault())
+    // Criar SimpleDateFormat é caro: feito uma vez só, não a cada segundo.
+    val hm = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val sec = remember { SimpleDateFormat("ss", Locale.getDefault()) }
+    val date = remember { SimpleDateFormat("EEEE, d 'de' MMMM", Locale.getDefault()) }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
         Spacer(Modifier.height(16.dp))
@@ -84,13 +85,15 @@ fun ClockScreen() {
 
         LazyColumn(Modifier.weight(1f)) {
             items(zones, key = { it }) { id ->
-                val tz = TimeZone.getTimeZone(id)
-                val f = SimpleDateFormat("HH:mm", Locale.getDefault()).apply { timeZone = tz }
+                val f = remember(id) {
+                    SimpleDateFormat("HH:mm", Locale.getDefault()).apply { timeZone = TimeZone.getTimeZone(id) }
+                }
+                val rel = remember(id, now / 60_000L) { relText(id, now) }
                 Row(Modifier.animateItem().fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(WorldClocks.name(id), style = MaterialTheme.typography.titleMedium)
                         Text(
-                            relText(id, now),
+                            rel,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

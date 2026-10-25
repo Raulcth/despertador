@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestHighRefreshRate()
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
@@ -64,6 +65,22 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         tick++
+    }
+
+    /** Pede a maior taxa de atualização da tela (90/120 Hz) na resolução atual, se o aparelho tiver. */
+    private fun requestHighRefreshRate() {
+        try {
+            @Suppress("DEPRECATION")
+            val d = (if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay) ?: return
+            val cur = d.mode
+            val best = d.supportedModes
+                .filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
+                .maxByOrNull { it.refreshRate } ?: return
+            val lp = window.attributes
+            lp.preferredDisplayModeId = best.modeId
+            window.attributes = lp
+        } catch (_: Exception) {
+        }
     }
 }
 

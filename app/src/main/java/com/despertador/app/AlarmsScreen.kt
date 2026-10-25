@@ -28,6 +28,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -55,6 +56,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -64,6 +66,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Calendar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private val DAY_NAMES = mapOf(1 to "Dom", 2 to "Seg", 3 to "Ter", 4 to "Qua", 5 to "Qui", 6 to "Sex", 7 to "Sáb")
 
@@ -81,7 +86,17 @@ fun repeatText(days: Set<Int>, prefix: String = ""): String = when {
 fun AlarmsScreen(refreshTick: Int) {
     val ctx = LocalContext.current
     var alarms by remember { mutableStateOf(AlarmRepo.load(ctx)) }
-    var dismissed by remember { mutableStateOf(AlarmRepo.isDismissedToday(ctx)) }
+    var dismissedUntil by remember { mutableLongStateOf(AlarmRepo.dismissedUntil(ctx)) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val dismissed = now < dismissedUntil
+    val dismissLabel = remember(dismissedUntil, now) {
+        val tomorrow = startOfNextDay(now)
+        when {
+            dismissedUntil <= tomorrow -> "Dispensados hoje · Desfazer"
+            dismissedUntil <= startOfNextDay(tomorrow) -> "Dispensados amanhã · Desfazer"
+            else -> "Dispensados · Desfazer"
+        }
+    }
     var editing by remember { mutableStateOf<Alarm?>(null) }
     var selected by remember { mutableStateOf(setOf<Int>()) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -90,7 +105,8 @@ fun AlarmsScreen(refreshTick: Int) {
 
     fun reload() {
         alarms = AlarmRepo.load(ctx)
-        dismissed = AlarmRepo.isDismissedToday(ctx)
+        dismissedUntil = AlarmRepo.dismissedUntil(ctx)
+        now = System.currentTimeMillis()
         selected = selected.filter { id -> alarms.any { it.id == id } }.toSet()
     }
 
@@ -98,10 +114,28 @@ fun AlarmsScreen(refreshTick: Int) {
         selected = if (id in selected) selected - id else selected + id
     }
 
-    LaunchedEffect(refreshTick) { reload() }
+    // A primeira leitura já foi feita acima; só relê quando o app volta ao primeiro plano.
+    var seenTick by remember { mutableIntStateOf(refreshTick) }
+    LaunchedEffect(refreshTick) {
+        if (refreshTick != seenTick) {
+            seenTick = refreshTick
+            reload()
+        }
+    }
+    // Atualiza a tela sozinha quando um "dispensado" termina (ex.: virou a meia-noite).
+    val nextBoundary = remember(alarms, dismissedUntil, now) {
+        (alarms.map { it.skipUntil } + dismissedUntil).filter { it > now }.minOrNull()
+    }
+    LaunchedEffect(nextBoundary) {
+        if (nextBoundary != null) {
+            delay((nextBoundary - System.currentTimeMillis()).coerceAtLeast(0L) + 100L)
+            now = System.currentTimeMillis()
+        }
+    }
     BackHandler(enabled = selecting) { selected = emptySet() }
 
     val allEnabled = alarms.filter { it.id in selected }.all { it.enabled }
+    val allSelected = alarms.isNotEmpty() && alarms.all { it.id in selected }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -113,8 +147,12 @@ fun AlarmsScreen(refreshTick: Int) {
                 if (sel) {
                     SelectionBar(
                         count = selected.size.coerceAtLeast(1),
+                        allSelected = allSelected,
                         allEnabled = allEnabled,
                         onClose = { selected = emptySet() },
+                        onSelectAll = {
+                            selected = if (allSelected) emptySet() else alarms.map { it.id }.toSet()
+                        },
                         onDuplicate = {
                             alarms.filter { it.id in selected }.forEach {
                                 AlarmRepo.save(ctx, it.copy(id = AlarmRepo.nextId(ctx), skipUntil = 0L))
@@ -143,7 +181,18 @@ fun AlarmsScreen(refreshTick: Int) {
                 Surface(
                     onClick = {
                         Haptics.click(ctx)
-                        if (dismissed) AlarmRepo.undoDismiss(ctx) else AlarmRepo.dismissAllToday(ctx)
+                        if (dismissed) {
+                            AlarmRepo.undoDismiss(ctx)
+                        } else {
+                            val n = AlarmRepo.dismissAllToday(ctx)
+                            if (n > 0) {
+                                Toast.makeText(
+                                    ctx,
+                                    if (n == 1) "1 alarme dispensado" else "$n alarmes dispensados",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
                         reload()
                     },
                     shape = CircleShape,
@@ -156,7 +205,7 @@ fun AlarmsScreen(refreshTick: Int) {
                         label = "pill"
                     ) { d ->
                         Text(
-                            if (d) "Dispensados hoje · Desfazer" else "Dispensar todos",
+                            if (d) dismissLabel else "Dispensar todos",
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                             style = MaterialTheme.typography.labelLarge
                         )
@@ -176,8 +225,10 @@ fun AlarmsScreen(refreshTick: Int) {
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(alarms, key = { it.id }) { a ->
+                    val skipped = a.enabled && a.days.isNotEmpty() && a.skipUntil > now
                     AlarmCard(
                         a = a,
+                        skipped = skipped,
                         selected = a.id in selected,
                         selecting = selecting,
                         onClick = { if (selecting) toggleSelect(a.id) else editing = a },
@@ -186,7 +237,7 @@ fun AlarmsScreen(refreshTick: Int) {
                             toggleSelect(a.id)
                         },
                         onToggle = { on ->
-                            AlarmRepo.setEnabled(ctx, a.id, on)
+                            if (skipped) AlarmRepo.clearSkip(ctx, a.id) else AlarmRepo.setEnabled(ctx, a.id, on)
                             reload()
                         },
                         modifier = Modifier.animateItem()
@@ -243,7 +294,7 @@ fun AlarmsScreen(refreshTick: Int) {
                 val msg: String
                 if (n.id == 0) {
                     val created = AlarmRepo.createSeries(ctx, n, interval, count)
-                    val t = nextTrigger(created.first(), now, AlarmRepo.dismissedUntil(ctx))
+                    val t = nextTrigger(created.first(), now)
                     msg = if (created.size > 1) {
                         "${created.size} alarmes criados · o primeiro em ${untilText(t - now)}"
                     } else {
@@ -251,7 +302,7 @@ fun AlarmsScreen(refreshTick: Int) {
                     }
                 } else {
                     AlarmRepo.save(ctx, n)
-                    val t = nextTrigger(n, now, AlarmRepo.dismissedUntil(ctx))
+                    val t = nextTrigger(n, now)
                     msg = "Alarme em ${untilText(t - now)}"
                 }
                 reload()
@@ -308,12 +359,15 @@ private fun TitleBar(menuOpen: Boolean, onMenu: (Boolean) -> Unit) {
 @Composable
 private fun SelectionBar(
     count: Int,
+    allSelected: Boolean,
     allEnabled: Boolean,
     onClose: () -> Unit,
+    onSelectAll: () -> Unit,
     onDuplicate: () -> Unit,
     onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val ctx = LocalContext.current
     Row(
         Modifier.fillMaxWidth().height(64.dp).padding(start = 8.dp, end = 8.dp, top = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -323,8 +377,21 @@ private fun SelectionBar(
             if (count == 1) "1 selecionado" else "$count selecionados",
             style = MaterialTheme.typography.titleMedium,
             maxLines = 1,
-            modifier = Modifier.weight(1f).padding(start = 4.dp)
+            modifier = Modifier.padding(start = 4.dp)
         )
+        // Bolinha: seleciona (ou desmarca) todos os alarmes de uma vez
+        Box(
+            Modifier
+                .padding(start = 6.dp)
+                .size(44.dp)
+                .clip(CircleShape)
+                .clickable(onClickLabel = "Selecionar todos") {
+                    Haptics.tick(ctx)
+                    onSelectAll()
+                },
+            contentAlignment = Alignment.Center
+        ) { SelectMark(allSelected) }
+        Spacer(Modifier.weight(1f))
         IconButton(onClick = onDuplicate) { Icon(Icons.Outlined.ContentCopy, "Duplicar") }
         IconButton(onClick = onToggle) {
             Icon(
@@ -343,6 +410,7 @@ private fun SelectionBar(
 @Composable
 private fun AlarmCard(
     a: Alarm,
+    skipped: Boolean,
     selected: Boolean,
     selecting: Boolean,
     onClick: () -> Unit,
@@ -358,8 +426,10 @@ private fun AlarmCard(
         if (selected) cs.primaryContainer.copy(alpha = 0.55f) else cs.surfaceVariant,
         tween(220), label = "bg"
     )
-    val contentAlpha by animateFloatAsState(if (a.enabled) 1f else 0.45f, tween(260), label = "alpha")
-    val textColor = cs.onSurface.copy(alpha = contentAlpha)
+    // Alarme "dispensado" (repetido que só volta amanhã) aparece apagado e desligado.
+    val active = a.enabled && !skipped
+    val contentAlpha by animateFloatAsState(if (active) 1f else 0.45f, tween(260), label = "alpha")
+    val textColor = cs.onSurface
     val shape = RoundedCornerShape(28.dp)
 
     Box(
@@ -370,7 +440,8 @@ private fun AlarmCard(
                 scaleY = scale
             }
             .clip(shape)
-            .background(container)
+            // cor lida só na fase de desenho: a animação não recompõe o cartão a cada quadro
+            .drawBehind { drawRect(container) }
             .combinedClickable(
                 interactionSource = interaction,
                 indication = LocalIndication.current,
@@ -379,15 +450,22 @@ private fun AlarmCard(
             )
     ) {
         Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {
-            val sub = repeatText(a.days) + if (a.label.isNotBlank()) " · ${a.label}" else ""
-            Text(sub, style = MaterialTheme.typography.bodyMedium, color = textColor)
+            val sub = repeatText(a.days) +
+                (if (skipped) " · Dispensado" else "") +
+                (if (a.label.isNotBlank()) " · ${a.label}" else "")
+            Text(
+                sub,
+                style = MaterialTheme.typography.bodyMedium,
+                color = textColor,
+                modifier = Modifier.graphicsLayer { alpha = contentAlpha }
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "${two(a.hour)}:${two(a.minute)}",
                     fontSize = 56.sp,
                     fontWeight = FontWeight.Light,
                     color = textColor,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).graphicsLayer { alpha = contentAlpha }
                 )
                 AnimatedContent(
                     targetState = selecting,
@@ -398,7 +476,7 @@ private fun AlarmCard(
                         if (sel) {
                             SelectMark(selected)
                         } else {
-                            Switch(checked = a.enabled, onCheckedChange = onToggle)
+                            Switch(checked = active, onCheckedChange = onToggle)
                         }
                     }
                 }
@@ -470,12 +548,15 @@ fun AlarmEditSheet(
             soundUri = pickedUri(r.data)?.toString()
         }
     }
-    val soundName = remember(soundUri) {
-        try {
-            val u = soundUri?.let { Uri.parse(it) } ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-            RingtoneManager.getRingtone(ctx, u)?.getTitle(ctx) ?: "Padrão"
-        } catch (e: Exception) {
-            "Padrão"
+    // Consultar o nome do toque acessa o sistema; fora da thread principal para a folha abrir sem travar.
+    val soundName by produceState("Padrão", soundUri) {
+        value = withContext(Dispatchers.IO) {
+            try {
+                val u = soundUri?.let { Uri.parse(it) } ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                RingtoneManager.getRingtone(ctx, u)?.getTitle(ctx) ?: "Padrão"
+            } catch (e: Exception) {
+                "Padrão"
+            }
         }
     }
 

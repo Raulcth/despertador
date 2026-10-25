@@ -1,6 +1,8 @@
 package com.despertador.app
 
 import android.content.Context
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -8,14 +10,20 @@ import android.os.Vibrator
 object Haptics {
     private var last = 0L
 
-    @Suppress("DEPRECATION")
-    private fun vib(c: Context): Vibrator? =
-        c.applicationContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    // Vibrar é uma chamada ao sistema (binder). Feita fora da thread principal para
+    // não travar a rolagem do seletor nem as animações.
+    private val handler: Handler by lazy {
+        val t = HandlerThread("haptics").apply { start() }
+        Handler(t.looper)
+    }
 
     private fun pulse(c: Context, ms: Long, amp: Int) {
-        val v = vib(c) ?: return
-        if (!v.hasVibrator()) return
-        v.vibrate(VibrationEffect.createOneShot(ms, amp))
+        val app = c.applicationContext
+        handler.post {
+            val v = app.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return@post
+            if (!v.hasVibrator()) return@post
+            v.vibrate(VibrationEffect.createOneShot(ms, amp))
+        }
     }
 
     /** Toque bem leve (arrastar dias, girar o seletor). */

@@ -30,18 +30,31 @@ fun TimerScreen() {
     var m by remember { mutableIntStateOf(5) }
     var s by remember { mutableIntStateOf(0) }
 
+    // Rodando: acompanha cada quadro da tela (anel suave). Parado: quase não gasta nada.
     LaunchedEffect(Unit) {
+        var lastPoll = 0L
         while (true) {
-            now = System.currentTimeMillis()
-            val cur = TimerStore.read(ctx)
-            if (cur.mode == 1 && cur.endAt - now < -5000L) {
-                TimerStore.clear(ctx)
-            } else if (cur != st) {
-                st = cur
+            if (st.mode == 1) withFrameNanos { } else delay(250)
+            val t = System.currentTimeMillis()
+            now = t
+            if (t - lastPoll >= 250L) {
+                lastPoll = t
+                val cur = TimerStore.read(ctx)
+                if (cur.mode == 1 && cur.endAt - t < -5000L) {
+                    TimerStore.clear(ctx)
+                } else if (cur != st) {
+                    st = cur
+                }
             }
-            delay(100)
         }
     }
+
+    // Só avisa a tela quando o resultado muda (o texto muda 1x por segundo, não a cada quadro).
+    val remainingMs by remember {
+        derivedStateOf { if (st.mode == 1) (st.endAt - now).coerceAtLeast(0L) else st.remaining }
+    }
+    val remainingText by remember { derivedStateOf { fmtTimer(remainingMs) } }
+    val canStart by remember { derivedStateOf { h + m + s > 0 } }
 
     Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text("Timers", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.fillMaxWidth())
@@ -68,21 +81,20 @@ fun TimerScreen() {
                                 st = TimerStore.read(ctx)
                             }
                         },
-                        enabled = h + m + s > 0,
+                        enabled = canStart,
                         modifier = Modifier.height(56.dp).widthIn(min = 180.dp)
                     ) { Text("Iniciar", fontSize = 18.sp) }
                 }
             } else {
-                val remaining = if (st.mode == 1) (st.endAt - now).coerceAtLeast(0L) else st.remaining
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(
-                            progress = { if (st.total > 0) remaining.toFloat() / st.total.toFloat() else 0f },
+                            progress = { if (st.total > 0) remainingMs.toFloat() / st.total.toFloat() else 0f },
                             modifier = Modifier.size(260.dp),
                             strokeWidth = 6.dp,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
-                        Text(fmtTimer(remaining), fontSize = 52.sp, fontWeight = FontWeight.Light)
+                        Text(remainingText, fontSize = 52.sp, fontWeight = FontWeight.Light)
                     }
                     Spacer(Modifier.height(32.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {

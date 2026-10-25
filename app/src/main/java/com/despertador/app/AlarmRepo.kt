@@ -2,24 +2,43 @@ package com.despertador.app
 
 import android.content.Context
 import org.json.JSONArray
-import java.util.Calendar
 
 object AlarmRepo {
     private fun prefs(c: Context) =
         c.applicationContext.getSharedPreferences("despertador", Context.MODE_PRIVATE)
 
+    // Cache em memória: evita reler e interpretar o JSON a cada chamada (antes era a cada toque).
+    private val lock = Any()
+    @Volatile
+    private var cache: List<Alarm>? = null
+
     fun load(c: Context): List<Alarm> {
-        val s = prefs(c).getString("alarms", "[]") ?: "[]"
-        val arr = JSONArray(s)
-        return (0 until arr.length())
-            .map { Alarm.fromJson(arr.getJSONObject(it)) }
-            .sortedWith(compareBy({ it.hour }, { it.minute }))
+        cache?.let { return it }
+        return synchronized(lock) {
+            cache ?: run {
+                val s = prefs(c).getString("alarms", "[]") ?: "[]"
+                val arr = JSONArray(s)
+                val list = (0 until arr.length())
+                    .map { Alarm.fromJson(arr.getJSONObject(it)) }
+                    .sortedWith(compareBy({ it.hour }, { it.minute }))
+                cache = list
+                list
+            }
+        }
+    }
+
+    private fun toJsonString(list: List<Alarm>): String {
+        val arr = JSONArray()
+        list.forEach { arr.put(it.toJson()) }
+        return arr.toString()
     }
 
     private fun store(c: Context, list: List<Alarm>) {
-        val arr = JSONArray()
-        list.forEach { arr.put(it.toJson()) }
-        prefs(c).edit().putString("alarms", arr.toString()).apply()
+        val sorted = list.sortedWith(compareBy({ it.hour }, { it.minute }))
+        synchronized(lock) {
+            cache = sorted
+            prefs(c).edit().putString("alarms", toJsonString(sorted)).apply()
+        }
     }
 
     fun nextId(c: Context): Int {
@@ -44,6 +63,11 @@ object AlarmRepo {
 
     fun setEnabled(c: Context, id: Int, on: Boolean) {
         load(c).firstOrNull { it.id == id }?.let { save(c, it.copy(enabled = on)) }
+    }
+
+    /** Tira a marca de "dispensado" de um alarme repetido (volta a tocar na próxima ocorrência). */
+    fun clearSkip(c: Context, id: Int) {
+        load(c).firstOrNull { it.id == id }?.let { save(c, it.copy(skipUntil = 0L)) }
     }
 
     /** Cria vários alarmes em sequência: base, base+intervalo, base+2*intervalo... */
@@ -74,35 +98,60 @@ object AlarmRepo {
         if (a.days.isEmpty()) save(c, a.copy(enabled = false)) else AlarmScheduler.schedule(c, a)
     }
 
-    /** "Dispensar todos": nenhum alarme toca até a meia-noite; o próximo dia volta ao normal. */
-    fun dismissAllToday(c: Context) {
+    /**
+     * "Dispensar todos": dispensa DE VERDADE todos os alarmes ativos do dia em questão.
+     * - O dia é o do próximo alarme a tocar (hoje, ou amanhã se já não resta nada hoje).
+     * - Alarme de uma vez só: é desligado.
+     * - Alarme repetido: continua ligado, mas só volta a tocar no dia seguinte (skipUntil).
+     * Tudo é gravado de uma vez e cada alarme afetado é cancelado e reagendado do zero
+     * (inclusive adiar/aviso pendentes). Devolve quantos alarmes foram dispensados.
+     */
+    fun dismissAllToday(c: Context): Int {
         val now = System.currentTimeMillis()
-        val midnight = Calendar.getInstance().apply {
-            timeInMillis = now
-            add(Calendar.DAY_OF_YEAR, 1)
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        val disabledIds = mutableSetOf<String>()
-        val updated = load(c).map { a ->
-            if (a.enabled && a.days.isEmpty() && nextTrigger(a, now) < midnight) {
-                disabledIds.add(a.id.toString())
-                a.copy(enabled = false)
-            } else a
+        val all = load(c)
+        val active = all.filter { it.enabled }
+        if (active.isEmpty()) return 0
+        val first = active.minOf { nextTrigger(it, now) }
+        val horizon = startOfNextDay(first)
+        val ids = HashSet<String>()
+        val updated = all.map { a ->
+            if (!a.enabled || nextTrigger(a, now) >= horizon) {
+                a
+            } else {
+                ids.add(a.id.toString())
+                if (a.days.isEmpty()) a.copy(enabled = false) else a.copy(skipUntil = horizon - 1)
+            }
         }
         store(c, updated)
-        prefs(c).edit().putLong("dismissedUntil", midnight).putStringSet("dismissedIds", disabledIds).apply()
-        rescheduleAll(c)
+        prefs(c).edit()
+            .putLong("dismissedUntil", horizon)
+            .putStringSet("dismissedIds", HashSet(ids))
+            .apply()
+        updated.filter { it.id.toString() in ids }.forEach {
+            AlarmScheduler.cancel(c, it.id)
+            AlarmScheduler.schedule(c, it)
+        }
+        return ids.size
     }
 
     fun undoDismiss(c: Context) {
-        val ids = prefs(c).getStringSet("dismissedIds", emptySet()) ?: emptySet()
-        val updated = load(c).map { if (it.id.toString() in ids) it.copy(enabled = true) else it }
+        val ids: Set<String> = prefs(c).getStringSet("dismissedIds", emptySet<String>())?.toSet() ?: emptySet()
+        val restored = mutableListOf<Alarm>()
+        val updated = load(c).map { a ->
+            if (a.id.toString() !in ids) {
+                a
+            } else {
+                val r = if (a.days.isEmpty()) a.copy(enabled = true) else a.copy(skipUntil = 0L)
+                restored.add(r)
+                r
+            }
+        }
         store(c, updated)
-        prefs(c).edit().putLong("dismissedUntil", 0L).putStringSet("dismissedIds", emptySet()).apply()
-        rescheduleAll(c)
+        prefs(c).edit()
+            .putLong("dismissedUntil", 0L)
+            .putStringSet("dismissedIds", emptySet<String>())
+            .apply()
+        restored.forEach { AlarmScheduler.schedule(c, it) }
     }
 }
 
